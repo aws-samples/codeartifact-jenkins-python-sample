@@ -1,6 +1,6 @@
-## codeartifact-jenkins
+## codeartifact-jenkins-python-sample
 
-Sample code for [Using CodeArtifact with Jenkins]() blog post
+Sample code for [Integrating Jenkins with AWS CodeArtifact to publish and consume Python artifacts](https://aws.amazon.com/blogs/devops/using-jenkins-with-codeartifact) blog post
 
 ## Security
 
