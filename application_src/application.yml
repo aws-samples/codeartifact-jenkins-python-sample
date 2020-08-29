@@ -1,0 +1,170 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description:
+  This template creates an ECS Cluster, ECR Repository, Fargate task
+  and a Application Load Balancer. These resources will be used
+  to deploy the application **WARNING**
+  This template creates a Load Balancer and related resources. You will be billed for
+  the AWS resources used if you create a stack from this template.
+
+Parameters:
+  VPC:
+    Description: Fargate will launch tasks in this VPC
+    Type: AWS::EC2::VPC::Id
+  SubnetA:
+    Description: Subnet from the VPC
+    Type: AWS::EC2::Subnet::Id
+  SubnetB:
+    Description: Subnet from the VPC
+    Type: AWS::EC2::Subnet::Id
+  ContainerName:
+    Type: String
+    Default: application
+  ImageTag:
+    Type: String
+    Description: Leave blank when creating the stack. Tag of the ECR Image that will be deployed to Fargate.
+    Default: ''
+
+Conditions:
+  HasImageTag: {"Fn::Not": [{"Fn::Equals": ["", {"Ref": "ImageTag"}]}]}
+
+Resources:
+
+  ECRRepository:
+    Type: AWS::ECR::Repository
+    Properties:
+      RepositoryName: !Ref ContainerName
+
+  Cluster:
+    Type: AWS::ECS::Cluster
+
+  TaskDefinition:
+    Condition: HasImageTag
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: !Join ['', [!Ref ContainerName, TaskDefinition]]
+      NetworkMode: awsvpc
+      RequiresCompatibilities:
+        - FARGATE
+      Cpu: 256
+      Memory: 0.5GB
+      ExecutionRoleArn: !Ref ExecutionRole
+      TaskRoleArn: !Ref TaskRole
+      ContainerDefinitions:
+        - Name: !Ref ContainerName
+          Image: !Sub ${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/${ECRRepository}:${ImageTag}
+          PortMappings:
+            - ContainerPort: '8080'
+
+  ExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: 'sts:AssumeRole'
+      ManagedPolicyArns:
+        - 'arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy'
+
+  TaskRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: 'sts:AssumeRole'
+
+  ContainerSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: !Join ['', [!Ref ContainerName, ContainerSecurityGroup]]
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: '8080'
+          ToPort: '8080'
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: '80'
+          ToPort: '80'
+          CidrIp: 0.0.0.0/0
+
+  Service:
+    Type: AWS::ECS::Service
+    Condition: HasImageTag
+    DependsOn: LoadBalancer
+    Properties:
+      ServiceName: !Ref ContainerName
+      Cluster: !Ref Cluster
+      TaskDefinition: !Ref TaskDefinition
+      DeploymentConfiguration:
+        MinimumHealthyPercent: 100
+        MaximumPercent: 200
+      DesiredCount: 1
+      LaunchType: FARGATE
+      LoadBalancers:
+        - ContainerName: !Ref ContainerName
+          ContainerPort: '8080'
+          TargetGroupArn: !Ref TargetGroup
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          AssignPublicIp: ENABLED
+          Subnets:
+            - !Ref SubnetA
+            - !Ref SubnetB
+          SecurityGroups:
+            - !Ref ContainerSecurityGroup
+
+  TargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      HealthCheckIntervalSeconds: 10
+      HealthCheckPath: '/'
+      HealthCheckTimeoutSeconds: 5
+      UnhealthyThresholdCount: 2
+      HealthyThresholdCount: 2
+      Port: '8080'
+      Protocol: HTTP
+      TargetGroupAttributes:
+        - Key: deregistration_delay.timeout_seconds
+          Value: 60 # default is 300
+      TargetType: ip
+      VpcId: !Ref VPC
+
+  Listener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      DefaultActions:
+        - TargetGroupArn: !Ref TargetGroup
+          Type: forward
+      LoadBalancerArn: !Ref LoadBalancer
+      Port: '80'
+      Protocol: HTTP
+
+  LoadBalancer:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      LoadBalancerAttributes:
+        - Key: idle_timeout.timeout_seconds
+          Value: 60
+      Scheme: internet-facing
+      SecurityGroups:
+        - !Ref ContainerSecurityGroup
+      Subnets:
+        - !Ref SubnetA
+        - !Ref SubnetB
+
+Outputs:
+  ApplicationUrl:
+    Value: !Sub http://${LoadBalancer.DNSName}
+  awsAccountId:
+    Value: !Ref AWS::AccountId
+  awsRegion:
+    Value: !Ref AWS::Region
+  awsStackName:
+    Value: !Ref AWS::StackName
+  containerName:
+    Value: !Ref ContainerName
