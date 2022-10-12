@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: MIT-0
 
 from flask import Flask
-from fantastic_ascii import ascii
+from very_fantastic_ascii import ascii
 from datetime import datetime
 
 app = Flask(__name__)

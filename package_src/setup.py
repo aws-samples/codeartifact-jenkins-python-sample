@@ -4,9 +4,9 @@
 from setuptools import setup, find_packages
 
 setup_args = dict(
-    name='fantastic_ascii',
+    name='very_fantastic_ascii',
     version='1.0.0',
-    description='Fantastic ASCII',
+    description='Very Fantastic ASCII',
     license='MIT',
     packages=find_packages(),
     author='Matt',
